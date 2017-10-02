@@ -6,7 +6,6 @@ import logging
 
 #logging.basicConfig(filename='log.log', level=logging.DEBUG, format='%(asctime)s -%(levelname)s -%(message)s')
 
-
 class Worker:
     registry = CollectorRegistry()
     loop = asyncio.get_event_loop()
@@ -50,7 +49,7 @@ class Worker:
         for new_task in data:
             must_be_add = True
             for old in self.host_config:
-                if old == new_task.split(';'):
+                if old == new_task.split(';') or old == '\n':
                     must_be_add = False
             if must_be_add:
                 self.task_add.append(new_task.split(';'))
@@ -91,7 +90,7 @@ class Worker:
             data = None
             flag = False
             for line in self.task_remove:
-                if ip == line[0]:
+                if ip == line[0] and parameters == line[1] and group == line[2]:
                     flag = True
             if not flag:
                 # data = ping.ping_d(ip, parameters)
