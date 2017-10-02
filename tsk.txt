@@ -1,3 +1,9 @@
-193.106.222.171;normal;test;--
-193.106.222.176;large;test;---
-193.106.222.177;large;test;--
+193.106.222.171 normal  znamenskaya         --
+193.106.222.176 normal  znamenskaya         --
+91.196.62.148   large   vladimirskaya-54    vladimirskaya-54-3
+172.16.5.10     large   vladimirskaya-54    vladimirskaya-54-23
+172.16.5.147    normal  vladimirskaya-54    vladimirskaya-54-4
+193.106.222.177 normal  znamenskaya         --
+
+
+

@@ -4,7 +4,7 @@ from subprocess import Popen, PIPE
 import re
 import logging
 
-#logging.basicConfig(filename='log.log', level=logging.DEBUG, format='%(asctime)s -%(levelname)s -%(message)s')
+logging.basicConfig(filename='log.log', level=logging.DEBUG, format='%(asctime)s -%(levelname)s -%(message)s')
 
 class Worker:
     registry = CollectorRegistry()
@@ -34,13 +34,16 @@ class Worker:
     def load_config(self):
         self.task_remove = [' ']
         self.task_add = []
+        data = []
         with open('tsk.txt', 'r') as file:
-            data = [row.strip() for row in file]
+            for row in file.readlines():
+                if len(row) > 2:
+                    data.append(row.strip().split())
 
         for old_task in self.host_config:
             must_be_remove = True
             for update_task in data:
-                if old_task == update_task.split(';'):
+                if old_task == update_task:
                     must_be_remove = False
             if must_be_remove:
                 self.task_remove.append(old_task)
@@ -49,13 +52,13 @@ class Worker:
         for new_task in data:
             must_be_add = True
             for old in self.host_config:
-                if old == new_task.split(';') or old == '\n':
+                if old == new_task:
                     must_be_add = False
             if must_be_add:
-                self.task_add.append(new_task.split(';'))
-                self.host_config.append(new_task.split(';'))
+                self.task_add.append(new_task)
+                self.host_config.append(new_task)
         print('LOAD_CONFIG:%s' % self.host_config)
-        #logging.info(u'LOAD_CONFIG:%s' % self.host_config)
+        logging.info(u'LOAD_CONFIG:%s' % self.host_config)
 
     @asyncio.coroutine
     def start_config(self):
@@ -99,7 +102,7 @@ class Worker:
                     self.THREAD_COUNT = self.THREAD_COUNT + 1
 
                     print('start ping ip %s' % ip)
-                    #logging.info(u'start ping ip %s' % ip)
+                    logging.info(u'start ping ip %s' % ip)
                     line = ('ping' + ' ' + ip + ' ' + parameters)
                     cmd = Popen(line.split(' '), stdout=PIPE)
                     yield from asyncio.sleep(0)
@@ -128,25 +131,25 @@ class Worker:
                 """END TEST"""
                 if data:
                     print('Result from "{0}": "{1}"'.format(ip, data))
-                    #logging.info(u'Result from "{0}": "{1}"'.format(ip, data))
+                    logging.info(u'Result from "{0}": "{1}"'.format(ip, data))
                     self.metric_delay_max.labels(ip, group).set(data[3])
                     self.metric_delay_min.labels(ip, group).set(data[2])
                     self.metric_delay.labels(ip, group).set(data[1])
                     self.metric_loss.labels(ip, group).set(data[0])
                     try:
                         push_to_gateway('graph.arhat.ua:9091', job='ping', registry=self.registry)
-                        print('Push DONE')
-                        #logging.info(u'Push DONE')
+                        print('Push %s done'%ip)
+                        logging.info(u'Push %s done'%ip)
                     except:
                         print('Error connect to push gate')
-                        #logging.info(u'Error connect to push gate')
+                        logging.error(u'Error connect to pushgate')
                 else:
                     self.metric_delay.labels(ip, group).set(0)
                     self.metric_loss.labels(ip, group).set(0)
                     self.metric_delay_max.labels(ip, group).set(0)
                     self.metric_delay_min.labels(ip, group).set(0)
                     print('some trable with ping')
-                    #logging.info(u'some trable with ping')
+                    logging.warning(u'Some trable with ping %s'%ip)
             else:
                 self.metric_delay.labels(ip, group).set(0)
                 self.metric_loss.labels(ip, group).set(0)
@@ -155,5 +158,5 @@ class Worker:
                 task = asyncio.Task.current_task()
                 task.cancel()
                 print('Cancel %s' % ip)
-                #logging.info(u'Cancel %s' % ip)
+                logging.warning(u'Cancel %s' % ip)
             yield from asyncio.sleep(int(self.delay_ping))
