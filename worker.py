@@ -122,6 +122,8 @@ class Worker:
                         data = result_loss
                     except:
                         print('Error parse ping response')
+                else:
+                    yield from asyncio.sleep(0)
                 """END TEST"""
                 if data:
                     print('Result from "{0}": "{1}"'.format(ip, data))
