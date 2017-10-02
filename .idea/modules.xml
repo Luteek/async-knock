@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/deamonPng.iml" filepath="$PROJECT_DIR$/.idea/deamonPng.iml" />
+      <module fileurl="file://A:\plagiator\python_workspace\vlc\.idea\vlc.iml" filepath="A:\plagiator\python_workspace\vlc\.idea\vlc.iml" />
+    </modules>
+  </component>
+</project>

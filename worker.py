@@ -1,19 +1,15 @@
 import asyncio
-import ping
 from prometheus_client import CollectorRegistry, Gauge, push_to_gateway
 from subprocess import Popen, PIPE
 import re
-import logging 
+import logging
 
+logging.basicConfig(filename='log.log', level=logging.DEBUG, format='%(asctime)s -%(levelname)s -%(message)s')
 
-logging.basicConfig(filename = 'log.log', level = logging.DEBUG, format='%(asctime)s -%(levelname)s -%(message)s')
-
-registry = CollectorRegistry()
 
 class Worker:
-   
-
-    MAX_THREAD_COUNT = 100
+    registry = CollectorRegistry()
+    loop = asyncio.get_event_loop()
     THREAD_COUNT = 0
     host_config = [' ']
     task_add = []
@@ -21,13 +17,19 @@ class Worker:
 
     metric_delay = Gauge('ping_pkt_latency_avg', 'h', ['ip', 'group'], registry=registry)
     metric_loss = Gauge('ping_pkt_lost', 'l', ['ip', 'group'], registry=registry)
-    metric_dealy_min = Gauge('ping_pkt_latency_min', 'l', ['ip', 'group'], registry=registry)
-    metric_dealy_max = Gauge('ping_pkt_latency_max', 'l', ['ip', 'group'], registry=registry)
+    metric_delay_min = Gauge('ping_pkt_latency_min', 'l', ['ip', 'group'], registry=registry)
+    metric_delay_max = Gauge('ping_pkt_latency_max', 'l', ['ip', 'group'], registry=registry)
 
-    loop = asyncio.get_event_loop()
-
-    def __init__(self, registry):
-        self.registry = registry
+    def __init__(self, gateway_host, job, max_thread, png_param, delay_ping=30, delay_parse=60):
+        self.gateway_host = gateway_host
+        self.job = job
+        self.MAX_THREAD_COUNT = max_thread
+        self.png_normal = png_param[0]
+        self.png_large = png_param[1]
+        self.png_fast = png_param[2]
+        self.png_killing = png_param[3]
+        self.delay_ping = delay_ping[4]
+        self.delay_parse = delay_parse[5]
 
     def load_config(self):
         self.task_remove = [' ']
@@ -52,29 +54,38 @@ class Worker:
             if must_be_add:
                 self.task_add.append(new_task.split(';'))
                 self.host_config.append(new_task.split(';'))
-        logging.info(u'LOAD_CONFIG:%s'%self.host_config)
+        logging.info(u'LOAD_CONFIG:%s' % self.host_config)
 
     @asyncio.coroutine
     def start_config(self):
-        #self.loop.create_task(self.request_metrics())
+        # self.loop.create_task(self.request_metrics())
         while True:
             self.load_config()
             for config in self.task_add:
                 self.loop.create_task(self.ping_host(config[0], config[1], config[2]))
             yield from asyncio.sleep(60)
 
-    @asyncio.coroutine
-    def request_metrics(self):
-        while True:
-            try:
-                push_to_gateway('graph.arhat.ua:9091', job='ping', registry=self.registry)
-                logging.info(u'Push DONE')
-            except:
-                logging.error(u'Error connect to push gate')
-            yield from asyncio.sleep(60)
+    # @asyncio.coroutine
+    # def request_metrics(self):
+    #     while True:
+    #         try:
+    #             push_to_gateway(self.gateway_host, job=self.job, registry=self.registry)
+    #             logging.info(u'Push DONE')
+    #         except:
+    #             logging.error(u'Error connect to pushgate')
+    #         yield from asyncio.sleep(60)
 
     @asyncio.coroutine
     def ping_host(self, ip, parameters, group):
+        if parameters == 'large':
+            parameters = self.png_large
+        elif parameters == 'fast':
+            parameters = self.png_fast
+        elif parameters == 'killing':
+            parameters = self.png_killing
+        else:
+            parameters = self.png_normal
+
         while True:
             data = None
             flag = False
@@ -108,7 +119,7 @@ class Worker:
                     # rtt max
                     result_loss.append(result[2])
                     data = result_loss
-                
+
                 """END TEST"""
                 if data:
                     logging.info(u'Result from "{0}": "{1}"'.format(ip, data))
@@ -116,11 +127,11 @@ class Worker:
                     self.metric_dealy_min.labels(ip, group).set(data[2])
                     self.metric_delay.labels(ip, group).set(data[1])
                     self.metric_loss.labels(ip, group).set(data[0])
-					try:
-                       push_to_gateway('graph.arhat.ua:9091', job='ping', registry=self.registry)
-                       logging.info(u'Push DONE')
+                    try:
+                        push_to_gateway('graph.arhat.ua:9091', job='ping', registry=self.registry)
+                        logging.info(u'Push DONE')
                     except:
-                       logging.error(u'Error connect to push gate')
+                        logging.error(u'Error connect to push gate')
                 else:
                     self.metric_delay.labels(ip, group).set(0)
                     self.metric_loss.labels(ip, group).set(0)
@@ -129,10 +140,5 @@ class Worker:
                 self.metric_delay.labels(ip, group).set(0)
                 task = asyncio.Task.current_task()
                 task.cancel()
-                logging.info(u'Cancel %s' %ip)
-
-            yield from asyncio.sleep(30)
-
-
-w = Worker(registry)
-w.loop.run_until_complete(w.start_config())
+                logging.info(u'Cancel %s' % ip)
+            yield from asyncio.sleep(int(self.delay_ping))

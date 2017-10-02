@@ -1,7 +1,4 @@
-8.8.8.8;-q -c10 -i0.3;test;google
-login.p1.worldoftanks.net;-q -c60 -i0.3;test;rus1
-login.p2.worldoftanks.net;-q -c50 -i0.3;test;rus2
-login.p3.worldoftanks.net;-q -c40 -i0.3;test;rus4
-login.p4.worldoftanks.net;-q -c30 -i0.3;test;rus1
-login.p5.worldoftanks.net;-q -c20 -i0.3;test;rus5
-login.p6.worldoftanks.net;-q -c10 -i0.3;test;rus2
+8.8.8.8;normal;test;google
+login.p1.worldoftanks.net;normal;test;rus1
+login.p2.worldoftanks.net;large;test;rus2
+login.p3.worldoftanks.net;normal;test;rus4
