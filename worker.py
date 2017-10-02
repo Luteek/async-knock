@@ -65,18 +65,12 @@ class Worker:
         while True:
             self.load_config()
             for config in self.task_add:
-                self.loop.create_task(self.ping_host(config[0], config[1], config[2]))
+                try:
+                    self.loop.create_task(self.ping_host(config[0], config[1], config[2]))
+                except:
+                    print('Wrong config line %s'%config)
+                    logging.error(u'Wrong config line %s'%config)
             yield from asyncio.sleep(self.delay_parse)
-
-    # @asyncio.coroutine
-    # def request_metrics(self):
-    #     while True:
-    #         try:
-    #             push_to_gateway(self.gateway_host, job=self.job, registry=self.registry)
-    #             logging.info(u'Push DONE')
-    #         except:
-    #             logging.error(u'Error connect to pushgate')
-    #         yield from asyncio.sleep(60)
 
     @asyncio.coroutine
     def ping_host(self, ip, parameters, group):
