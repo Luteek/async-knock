@@ -3,6 +3,10 @@ import worker
 
 CONFIG_FILE = "config.ini"
 
+"""Удалит при запуске прокраммы старые логи"""
+with open('log.log', 'w'):
+    pass
+
 config = configparser.ConfigParser()
 config.read(CONFIG_FILE)
 
@@ -17,10 +21,8 @@ delay_parse = thread['delay_parse']
 
 pngparam = config['PING_PARAM']
 png_norm = pngparam['normal']
-png_large = pngparam['large']
 png_fast = pngparam['fast']
-png_killing = pngparam['killing']
 
-work = worker.Worker(host, jobName, max_thread, [png_norm, png_large, png_fast, png_killing], 30, 60)
+work = worker.Worker(host, jobName, max_thread, [png_norm,  png_fast], delay_ping, delay_parse)
 work.loop.run_until_complete(work.start_config())
 

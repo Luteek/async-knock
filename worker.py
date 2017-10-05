@@ -32,15 +32,13 @@ class Worker:
         :param max_thread:      - задает максимальное кол-во потоков
         :param png_param:       - параметры пинга
         :param delay_ping:      - время задержки задачи пинга
-        :param delay_parse:     - время задержки задачи парса файла с хостами
+        :param delay_parse:     - время задержки задачи парса файла с хостам
         """
         self.gateway_host = gateway_host
         self.job = job
-        self.MAX_THREAD_COUNT = int(max_thread)
+        self.SEMAPHORE = asyncio.Semaphore(int(max_thread))
         self.png_normal = png_param[0]
-        self.png_large = png_param[1]
-        self.png_fast = png_param[2]
-        self.png_killing = png_param[3]
+        self.png_fast = png_param[1]
         self.delay_ping = int(delay_ping)
         self.delay_parse = int(delay_parse)
 
@@ -117,6 +115,7 @@ class Worker:
         
         Если обнаруживает себя в массиве task_remove - удаляет себя из стека задач.
         """
+
         if parameters == 'large':
             parameters = self.png_large
         elif parameters == 'fast':
@@ -133,19 +132,17 @@ class Worker:
                 if ip == line[0] and parameters == line[1] and group == line[2]:
                     flag = True
             if not flag:
-                """TEST"""
-                if self.THREAD_COUNT < self.MAX_THREAD_COUNT:
-                    self.THREAD_COUNT = self.THREAD_COUNT + 1
-
+                with(yield from self.SEMAPHORE):
+                    """TEST"""
                     print('start ping ip %s' % ip)
                     """Если пул свободен, начинаем выполнение и отдаем управление в главный луп"""
-                    print('THREAD_POOL %s' % str(self.THREAD_COUNT))
                     logging.info(u'start ping ip %s' % ip)
-                    line = ('ping' + ' ' + ip + ' ' + parameters)
+                    line = ('sudo ping' + ' ' + ip + ' ' + parameters)
                     cmd = Popen(line.split(' '), stdout=PIPE)
                     yield from asyncio.sleep(0)
 
                     output = cmd.communicate()[0]
+
                     try:
                         # find loss
                         result_loss = re.split(r'% packet loss', str(output))
@@ -186,17 +183,8 @@ class Worker:
                         self.metric_delay_min.labels(ip, group, name).set(0)
                         print('some trable with ping')
                         logging.warning(u'Some trable with ping %s' % ip)
-                    """Когда задача выполнена засыпаем на заданное время и отдаем управление в главный луп"""
-
-                    self.THREAD_COUNT = self.THREAD_COUNT - 1
-                    print('THREAD_POOL %s' % str(self.THREAD_COUNT))
-                    yield from asyncio.sleep(int(self.delay_ping))
-                else:
-                    """Если пул забит, то передаем управление в главный луп"""
-                    print('Thread pool is fool ip: %s'%ip)
-                    logging.warning(u'Thread pool is fool ip: %s'%ip)
-                    yield from asyncio.sleep(0)
-                """END TEST"""
+                        """Когда задача выполнена засыпаем на заданное время и отдаем управление в главный луп"""
+                yield from asyncio.sleep(int(self.delay_ping))
             else:
                 self.metric_delay.labels(ip, group, name).set(0)
                 self.metric_loss.labels(ip, group, name).set(0)
