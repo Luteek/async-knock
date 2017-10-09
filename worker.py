@@ -21,8 +21,7 @@ class Worker:
     """
     metric_delay = Gauge('ping_pkt_latency_avg', 'h', ['ip', 'group', 'name'], registry=registry)
     metric_loss = Gauge('ping_pkt_lost', 'l', ['ip', 'group', 'name'], registry=registry)
-    metric_received_pkt = Gauge('ping_match_received', 'packet received', ['ip', 'group', 'name'], registry=registry)
-    metric_transmitted_pkt = Gauge('ping_match_transmitted', 'packet transmitted', ['ip', 'group', 'name'], registry=registry)
+    metric_received_pkt = Gauge('ping_match_received', 'packet received', ['ip', 'group', 'name', 'transmitted'], registry=registry)
     metric_delay_min = Gauge('ping_pkt_latency_min', 'l', ['ip', 'group', 'name'], registry=registry)
     metric_delay_max = Gauge('ping_pkt_latency_max', 'l', ['ip', 'group', 'name'], registry=registry)
 
@@ -171,8 +170,7 @@ class Worker:
                         self.metric_delay.labels(ip, group, name).set(data['rtt_avg'])
                         self.metric_loss.labels(ip, group, name).set(data['pkt_loss'])
 
-                        self.metric_transmitted_pkt.labels(ip, group, name).set(data['pkt_transmitted'])
-                        self.metric_received_pkt.labels(ip, group, name).set(data['pkt_received'])
+                        self.metric_received_pkt.labels(ip, group, name, data['pkt_transmitted']).set(data['pkt_received'])
                         try:
                             push_to_gateway('graph.arhat.ua:9091', job='ping', registry=self.registry)
                             print('Push %s done' % ip)
@@ -186,8 +184,7 @@ class Worker:
                         self.metric_delay_max.labels(ip, group, name).set(0)
                         self.metric_delay_min.labels(ip, group, name).set(0)
 
-                        self.metric_received_pkt(ip, group, name).set(0)
-                        self.metric_transmitted_pkt(ip, group, name).set(0)
+                        self.metric_received_pkt(ip, group, name, 0).set(0)
                         print('some trable with ping')
                         logging.warning(u'Some trable with ping %s' % ip)
                         """Когда задача выполнена засыпаем на заданное время и отдаем управление в главный луп"""
@@ -198,8 +195,7 @@ class Worker:
                 self.metric_delay_max.labels(ip, group, name).set(0)
                 self.metric_delay_min.labels(ip, group, name).set(0)
 
-                self.metric_received_pkt(ip, group, name).set(0)
-                self.metric_transmitted_pkt(ip, group, name).set(0)
+                self.metric_received_pkt(ip, group, name, 0).set(0)
                 task = asyncio.Task.current_task()
                 task.cancel()
                 print('Cancel %s' % ip)
