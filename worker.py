@@ -4,9 +4,9 @@ from subprocess import Popen, PIPE
 import re
 import logging
 
-logging.basicConfig(filename='log.log', level=logging.DEBUG, format='%(asctime)s -%(levelname)s -%(message)s')
 
 class Worker:
+    logging.basicConfig(filename='log.log', level=logging.DEBUG, format='%(asctime)s -%(levelname)s -%(message)s')
     registry = CollectorRegistry()
     """Основной луп"""
     loop = asyncio.get_event_loop()
@@ -21,6 +21,8 @@ class Worker:
     """
     metric_delay = Gauge('ping_pkt_latency_avg', 'h', ['ip', 'group', 'name'], registry=registry)
     metric_loss = Gauge('ping_pkt_lost', 'l', ['ip', 'group', 'name'], registry=registry)
+    metric_received_pkt = Gauge('ping_match_received', 'packet received', ['ip', 'group', 'name'], registry=registry)
+    metric_transmitted_pkt = Gauge('ping_match_transmitted', 'packet transmitted', ['ip', 'group', 'name'], registry=registry)
     metric_delay_min = Gauge('ping_pkt_latency_min', 'l', ['ip', 'group', 'name'], registry=registry)
     metric_delay_max = Gauge('ping_pkt_latency_max', 'l', ['ip', 'group', 'name'], registry=registry)
 
@@ -136,43 +138,45 @@ class Worker:
                     """TEST"""
                     print('start ping ip %s' % ip)
                     """Если пул свободен, начинаем выполнение и отдаем управление в главный луп"""
-                    logging.info(u'start ping ip %s' % ip)
+                    #logging.info(u'start ping ip %s' % ip)
                     line = ('sudo ping' + ' ' + ip + ' ' + parameters)
                     cmd = Popen(line.split(' '), stdout=PIPE)
                     yield from asyncio.sleep(0)
 
                     output = cmd.communicate()[0]
-
+                    output = str(output)
                     try:
-                        # find loss
-                        result_loss = re.split(r'% packet loss', str(output))
-                        result_loss = re.split(r'received, ', result_loss[0])
-                        # find avr
-                        result = re.split(r'mdev = ', str(output))
-                        result = re.split(r' ms', result[1])
-                        result = re.split(r'/', result[0])
-                        result_loss[0] = result_loss[1]
-                        # rtt avg
-                        result_loss[1] = result[1]
-                        # rtt min
-                        result_loss.append(result[0])
-                        # rtt max
-                        result_loss.append(result[2])
-                        data = result_loss
+                        packet_regex = re.compile(r'(\d+) packets transmitted, (\d+) (?:packets )?received, (\d+\.?\d*)% packet loss')
+                        latency_regex = re.compile(r'(\d+.\d+)/(\d+.\d+)/(\d+.\d+)/(\d+.\d+)')
+                        packet_match = packet_regex.search(output)
+                        latency_match = latency_regex.search(output)
+
+                        pkt_out = packet_match.groups()
+                        ltn_out = latency_match.groups()
+                        data = dict(
+                            pkt_transmitted=pkt_out[0],
+                            pkt_received=pkt_out[1],
+                            pkt_loss=pkt_out[2],
+                            rtt_min=ltn_out[0],
+                            rtt_avg=ltn_out[1],
+                            rtt_max=ltn_out[2], )
                     except:
-                        print('Error parse ping response')
+                       print('Error parse ping response')
 
                     if data:
                         print('Result from "{0}": "{1}"'.format(ip, data))
-                        logging.info(u'Result from "{0}": "{1}"'.format(ip, data))
-                        self.metric_delay_max.labels(ip, group, name).set(data[3])
-                        self.metric_delay_min.labels(ip, group, name).set(data[2])
-                        self.metric_delay.labels(ip, group, name).set(data[1])
-                        self.metric_loss.labels(ip, group, name).set(data[0])
+                        #logging.info(u'Result from "{0}": "{1}"'.format(ip, data))
+                        self.metric_delay_max.labels(ip, group, name).set(data['rtt_max'])
+                        self.metric_delay_min.labels(ip, group, name).set(data['rtt_min'])
+                        self.metric_delay.labels(ip, group, name).set(data['rtt_avg'])
+                        self.metric_loss.labels(ip, group, name).set(data['pkt_loss'])
+
+                        self.metric_transmitted_pkt.labels(ip, group, name).set(data['pkt_transmitted'])
+                        self.metric_received_pkt.labels(ip, group, name).set(data['pkt_received'])
                         try:
                             push_to_gateway('graph.arhat.ua:9091', job='ping', registry=self.registry)
                             print('Push %s done' % ip)
-                            logging.info(u'Push %s done' % ip)
+                            #logging.info(u'Push %s done' % ip)
                         except:
                             print('Error connect to push gate')
                             logging.error(u'Error connect to pushgate')
@@ -181,6 +185,9 @@ class Worker:
                         self.metric_loss.labels(ip, group, name).set(0)
                         self.metric_delay_max.labels(ip, group, name).set(0)
                         self.metric_delay_min.labels(ip, group, name).set(0)
+
+                        self.metric_received_pkt(ip, group, name).set(0)
+                        self.metric_transmitted_pkt(ip, group, name).set(0)
                         print('some trable with ping')
                         logging.warning(u'Some trable with ping %s' % ip)
                         """Когда задача выполнена засыпаем на заданное время и отдаем управление в главный луп"""
@@ -190,6 +197,9 @@ class Worker:
                 self.metric_loss.labels(ip, group, name).set(0)
                 self.metric_delay_max.labels(ip, group, name).set(0)
                 self.metric_delay_min.labels(ip, group, name).set(0)
+
+                self.metric_received_pkt(ip, group, name).set(0)
+                self.metric_transmitted_pkt(ip, group, name).set(0)
                 task = asyncio.Task.current_task()
                 task.cancel()
                 print('Cancel %s' % ip)
