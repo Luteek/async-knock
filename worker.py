@@ -25,7 +25,7 @@ class Worker:
     metric_delay_min = Gauge('ping_pkt_latency_min', 'l', ['ip', 'group', 'name'], registry=registry)
     metric_delay_max = Gauge('ping_pkt_latency_max', 'l', ['ip', 'group', 'name'], registry=registry)
 
-    def __init__(self, gateway_host, job, max_thread, png_param, delay_ping, delay_parse):
+    def __init__(self, gateway_host, job, max_thread, png_param, delay_ping, delay_collect, delay_parse):
         """
         Инициализация переменных при создании объекта
         :param gateway_host:    - адрес сервера прометеуса 
@@ -38,10 +38,17 @@ class Worker:
         self.gateway_host = gateway_host
         self.job = job
         self.SEMAPHORE = asyncio.Semaphore(int(max_thread))
+
+        self.DELAY_COLLECT = int(delay_collect)
+
         self.png_normal = png_param[0]
         self.png_fast = png_param[1]
+        self.png_large = png_param[2]
+        self.png_killing = png_param[3]
+
         self.delay_ping = int(delay_ping)
         self.delay_parse = int(delay_parse)
+
 
     def load_config(self):
         """
@@ -127,77 +134,95 @@ class Worker:
             parameters = self.png_normal
 
         while True:
-            data = None
+            data = dict(
+                pkt_transmitted=pkt_out[0],
+                pkt_received=pkt_out[1],
+                pkt_loss=pkt_out[2],
+                rtt_min=ltn_out[0],
+                rtt_avg=ltn_out[1],
+                rtt_max=ltn_out[2], )
+
             flag = False
             for line in self.task_remove:
                 if ip == line[0] and parameters == line[1] and group == line[2]:
                     flag = True
+
             if not flag:
-                with(yield from self.SEMAPHORE):
-                    """TEST"""
-                    print('start ping ip %s' % ip)
-                    """Если пул свободен, начинаем выполнение и отдаем управление в главный луп"""
-                    #logging.info(u'start ping ip %s' % ip)
-                    line = ('sudo ping' + ' ' + ip + ' ' + parameters)
-                    cmd = Popen(line.split(' '), stdout=PIPE)
-                    yield from asyncio.sleep(0)
+                for i in range(self.delay_ping):
+                    with(yield from self.SEMAPHORE):
+                        print('start ping ip %s' % ip)
+                        """Если пул свободен, начинаем выполнение и отдаем управление в главный луп"""
+                        #logging.info(u'start ping ip %s' % ip)
+                        line = ('sudo ping' + ' ' + ip + ' ' + parameters)
+                        cmd = Popen(line.split(' '), stdout=PIPE)
+                        yield from asyncio.sleep(0)
 
-                    output = cmd.communicate()[0]
-                    output = str(output)
-                    try:
-                        packet_regex = re.compile(r'(\d+) packets transmitted, (\d+) (?:packets )?received, (\d+\.?\d*)% packet loss')
-                        latency_regex = re.compile(r'(\d+.\d+)/(\d+.\d+)/(\d+.\d+)/(\d+.\d+)')
-                        packet_match = packet_regex.search(output)
-                        latency_match = latency_regex.search(output)
-
-                        pkt_out = packet_match.groups()
-                        ltn_out = latency_match.groups()
-                        data = dict(
-                            pkt_transmitted=pkt_out[0],
-                            pkt_received=pkt_out[1],
-                            pkt_loss=pkt_out[2],
-                            rtt_min=ltn_out[0],
-                            rtt_avg=ltn_out[1],
-                            rtt_max=ltn_out[2], )
-                    except:
-                       print('Error parse ping response')
-
-                    if data:
-                        print('Result from "{0}": "{1}"'.format(ip, data))
-                        #logging.info(u'Result from "{0}": "{1}"'.format(ip, data))
-                        self.metric_delay_max.labels(ip, group, name).set(data['rtt_max'])
-                        self.metric_delay_min.labels(ip, group, name).set(data['rtt_min'])
-                        self.metric_delay.labels(ip, group, name).set(data['rtt_avg'])
-                        self.metric_loss.labels(ip, group, name).set(data['pkt_loss'])
-
-                        self.metric_received_pkt.labels(ip, group, name, data['pkt_transmitted']).set(data['pkt_received'])
+                        output = cmd.communicate()[0]
+                        output = str(output)
                         try:
-                            push_to_gateway('graph.arhat.ua:9091', job='ping', registry=self.registry)
-                            print('Push %s done' % ip)
-                            #logging.info(u'Push %s done' % ip)
-                        except:
-                            print('Error connect to push gate')
-                            logging.error(u'Error connect to pushgate')
-                    else:
-                        self.metric_delay.labels(ip, group, name).set(0)
-                        self.metric_loss.labels(ip, group, name).set(0)
-                        self.metric_delay_max.labels(ip, group, name).set(0)
-                        self.metric_delay_min.labels(ip, group, name).set(0)
+                            packet_regex = re.compile(r'(\d+) packets transmitted, (\d+) (?:packets )?received, (\d+\.?\d*)% packet loss')
+                            latency_regex = re.compile(r'(\d+.\d+)/(\d+.\d+)/(\d+.\d+)/(\d+.\d+)')
+                            packet_match = packet_regex.search(output)
+                            latency_match = latency_regex.search(output)
 
-                        self.metric_received_pkt(ip, group, name, 0).set(0)
-                        print('some trable with ping')
-                        logging.warning(u'Some trable with ping %s' % ip)
-                        """Когда задача выполнена засыпаем на заданное время и отдаем управление в главный луп"""
-                yield from asyncio.sleep(int(self.delay_ping))
+                            pkt_out = packet_match.groups()
+                            ltn_out = latency_match.groups()
+                            data_new = dict(
+                                pkt_transmitted=pkt_out[0],
+                                pkt_received=pkt_out[1],
+                                pkt_loss=pkt_out[2],
+                                rtt_min=ltn_out[0],
+                                rtt_avg=ltn_out[1],
+                                rtt_max=ltn_out[2], )
+                            data = self.inc_dict(data, data_new)
+                        except:
+                           print('Error parse ping response')
+
+                data = self.middle_result(self.delay_ping)
+
+                if data:
+                    self.metric_delay_max.labels(ip, group, name).set(data['rtt_max'])
+                    self.metric_delay_min.labels(ip, group, name).set(data['rtt_min'])
+                    self.metric_delay.labels(ip, group, name).set(data['rtt_avg'])
+                    self.metric_loss.labels(ip, group, name).set(data['pkt_loss'])
+
+                    self.metric_received_pkt.labels(ip, group, name, data['pkt_transmitted']).set(data['pkt_received'])
+                    try:
+                        push_to_gateway('graph.arhat.ua:9091', job='ping', registry=self.registry)
+                        print('Push %s done' % ip)
+                    except:
+                        print('Error connect to push gate')
+                        logging.error(u'Error connect to pushgate')
+                else:
+                    self.metric_delay.labels(ip, group, name).set(0)
+                    self.metric_loss.labels(ip, group, name).set(0)
+                    self.metric_delay_max.labels(ip, group, name).set(0)
+                    self.metric_delay_min.labels(ip, group, name).set(0)
+                    self.metric_received_pkt.labels(ip, group, name, 0).set(0)
+
+                    print('some trable with ping')
+                    logging.warning(u'Some trable with ping %s' % ip)
+                    """Когда задача выполнена засыпаем на заданное время и отдаем управление в главный луп"""
+                yield from asyncio.sleep(int(self.DELAY_COLLECT))
             else:
                 self.metric_delay.labels(ip, group, name).set(0)
                 self.metric_loss.labels(ip, group, name).set(0)
                 self.metric_delay_max.labels(ip, group, name).set(0)
                 self.metric_delay_min.labels(ip, group, name).set(0)
+                self.metric_received_pkt.labels(ip, group, name, 0).set(0)
 
-                self.metric_received_pkt(ip, group, name, 0).set(0)
                 task = asyncio.Task.current_task()
                 task.cancel()
                 print('Cancel %s' % ip)
                 logging.warning(u'Cancel %s' % ip)
                 yield from asyncio.sleep(0)
+
+    def inc_dict(self, data, data_new):
+        for param in data:
+            data[param] += data_new[param]
+        return data
+
+    def middle_result(self, data, num_range):
+        for param in data:
+            data[param] = data[param]/num_range
+        return data
